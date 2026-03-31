@@ -18,8 +18,11 @@ export default function LoginPage() {
     setLoading(true)
     setError('')
 
+    // 自動補上 @cies.com，讓使用者只需輸入帳號
+    const loginEmail = email.includes('@') ? email : `${email}@cies.com`
+
     const { error } = await supabase.auth.signInWithPassword({
-      email,
+      email: loginEmail,
       password,
     })
 
@@ -43,15 +46,17 @@ export default function LoginPage() {
         <form onSubmit={handleLogin} className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              電子郵件
+              帳號
             </label>
             <input
-              type="email"
+              type="text"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
+              placeholder="例如：cbe566"
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               required
             />
+            <p className="text-xs text-gray-400 mt-1">輸入帳號即可，系統自動補上 @cies.com</p>
           </div>
 
           <div>
