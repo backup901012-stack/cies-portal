@@ -143,8 +143,11 @@ export default function ClientHoldingsPage() {
                   <th className="text-right px-3 py-2.5 font-medium">投資額(HKD)</th>
                   <th className="text-right px-3 py-2.5 font-medium">最新淨值</th>
                   <th className="text-right px-3 py-2.5 font-medium">市值(HKD)</th>
-                  <th className="text-right px-3 py-2.5 font-medium">損益(HKD)</th>
-                  <th className="text-right px-3 py-2.5 font-medium">回報率</th>
+                  <th className="text-right px-3 py-2.5 font-medium">未實現損益</th>
+                  <th className="text-right px-3 py-2.5 font-medium">已實現損益</th>
+                  <th className="text-right px-3 py-2.5 font-medium">累計派息</th>
+                  <th className="text-right px-3 py-2.5 font-medium">含息總收益</th>
+                  <th className="text-right px-3 py-2.5 font-medium">含息回報率</th>
                   <th className="text-center px-3 py-2.5 font-medium">PRR</th>
                 </tr>
               </thead>
@@ -152,13 +155,22 @@ export default function ClientHoldingsPage() {
                 {group.holdings.map(h => (
                   <tr key={h.fund.id} className="hover:bg-gray-50">
                     <td className="px-3 py-2 font-mono text-xs">{h.fund.isin}</td>
-                    <td className="px-3 py-2">{h.fund.name_zh || h.fund.name_en || '-'}</td>
+                    <td className="px-3 py-2 text-xs">{h.fund.name_zh || h.fund.name_en || '-'}</td>
                     <td className="px-3 py-2 text-right">{fmtNum(h.avg_cost, 4)}</td>
                     <td className="px-3 py-2 text-right">{fmtNum(h.shares, 2)}</td>
                     <td className="px-3 py-2 text-right">{fmtNum(h.investment_hkd)}</td>
                     <td className="px-3 py-2 text-right">{fmtNum(h.latest_nav, 4)}</td>
                     <td className="px-3 py-2 text-right">{fmtNum(h.market_value_hkd)}</td>
-                    <td className={`px-3 py-2 text-right ${h.total_return >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    <td className={`px-3 py-2 text-right ${h.unrealized_pnl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                      {fmtNum(h.unrealized_pnl)}
+                    </td>
+                    <td className={`px-3 py-2 text-right ${h.realized_pnl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                      {fmtNum(h.realized_pnl)}
+                    </td>
+                    <td className="px-3 py-2 text-right text-blue-600">
+                      {fmtNum(h.total_dividends)}
+                    </td>
+                    <td className={`px-3 py-2 text-right font-medium ${h.total_return >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                       {h.total_return >= 0 ? '+' : ''}{fmtNum(h.total_return)}
                     </td>
                     <td className={`px-3 py-2 text-right ${h.return_rate >= 0 ? 'text-green-600' : 'text-red-600'}`}>
@@ -182,6 +194,7 @@ export default function ClientHoldingsPage() {
                   <td className="px-3 py-2.5 text-right">{fmtNum(group.subtotal_investment)}</td>
                   <td className="px-3 py-2.5"></td>
                   <td className="px-3 py-2.5 text-right">{fmtNum(group.subtotal_market_value)}</td>
+                  <td className="px-3 py-2.5" colSpan={3}></td>
                   <td className={`px-3 py-2.5 text-right ${group.subtotal_pnl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                     {group.subtotal_pnl >= 0 ? '+' : ''}{fmtNum(group.subtotal_pnl)}
                   </td>
