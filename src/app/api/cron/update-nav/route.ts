@@ -73,46 +73,48 @@ export async function GET() {
       return NextResponse.json({ success: true, message: '無持倉基金', updated: 0 })
     }
 
+    // 取所有有持倉的基金（不限 nav_source）
     const { data: funds } = await supabase
       .from('funds')
       .select('id, isin, yahoo_ticker, nav_source, currency')
       .in('id', uniqueFundIds)
-      .in('nav_source', ['yahoo', 'frankfurt'])
 
     if (!funds?.length) {
       return NextResponse.json({ success: true, message: '無需更新的基金', updated: 0 })
     }
 
-    // 分批處理，每批 10 個，間隔 1 秒（避免 rate limit）
-    const batchSize = 10
+    // 分批處理，每批 5 個，間隔 1 秒（避免 rate limit）
+    const batchSize = 5
     for (let i = 0; i < funds.length; i += batchSize) {
       const batch = funds.slice(i, i + batchSize)
 
       const results = await Promise.all(
         batch.map(async (fund) => {
-          const ticker = fund.yahoo_ticker || fund.isin
-
-          // 嘗試抓取
-          let result = await fetchYahooNav(ticker)
-
-          // 如果失敗且有 ISIN，嘗試搜尋替代 ticker
-          if (!result && fund.isin !== ticker) {
-            result = await fetchYahooNav(fund.isin)
+          // 1. 有 yahoo_ticker 就直接用
+          if (fund.yahoo_ticker) {
+            const result = await fetchYahooNav(fund.yahoo_ticker)
+            if (result) return { fund, result }
           }
 
-          // 如果還是失敗，嘗試 Frankfurt（加 .F 後綴）
-          if (!result && fund.nav_source === 'frankfurt') {
-            const fTicker = await searchYahooTicker(fund.isin)
-            if (fTicker) {
-              result = await fetchYahooNav(fTicker)
-              // 更新 yahoo_ticker
-              if (result) {
-                await supabase.from('funds').update({ yahoo_ticker: fTicker }).eq('id', fund.id)
-              }
+          // 2. 用 ISIN 直接查
+          const result = await fetchYahooNav(fund.isin)
+          if (result) return { fund, result }
+
+          // 3. 用 Yahoo Search 找替代 ticker
+          const searchTicker = await searchYahooTicker(fund.isin)
+          if (searchTicker) {
+            const searchResult = await fetchYahooNav(searchTicker)
+            if (searchResult) {
+              // 儲存找到的 ticker，下次不用再搜尋
+              await supabase.from('funds').update({
+                yahoo_ticker: searchTicker,
+                nav_source: 'yahoo',
+              }).eq('id', fund.id)
+              return { fund, result: searchResult }
             }
           }
 
-          return { fund, result }
+          return { fund, result: null }
         })
       )
 

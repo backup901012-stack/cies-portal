@@ -286,6 +286,73 @@ export async function importExcelToDatabase(
     }
   }
 
+  // 從「持倉比例配置表」抓最新淨值
+  const holdingSheetName = workbook.SheetNames.find(name => name.includes('持倉'))
+  if (holdingSheetName) {
+    const holdingWs = workbook.Sheets[holdingSheetName]
+    const holdingRange = XLSX.utils.decode_range(holdingWs['!ref'] || 'A1')
+
+    // 找標題行（含有「ISIN CODE」的行）
+    let hHeaderRow = -1
+    for (let r = 0; r <= Math.min(holdingRange.e.r, 10); r++) {
+      for (let c = 0; c <= 5; c++) {
+        const cell = holdingWs[XLSX.utils.encode_cell({ r, c })]
+        if (cell && String(cell.v).includes('ISIN')) {
+          hHeaderRow = r
+          break
+        }
+      }
+      if (hHeaderRow >= 0) break
+    }
+
+    // 找日期欄（通常在第1行C欄）
+    let navDate = new Date().toISOString().split('T')[0]
+    for (let r = 0; r <= 3; r++) {
+      for (let c = 1; c <= 5; c++) {
+        const cell = holdingWs[XLSX.utils.encode_cell({ r, c })]
+        if (cell && cell.v instanceof Date) {
+          navDate = cell.v.toISOString().split('T')[0]
+          break
+        }
+        if (cell && typeof cell.v === 'number' && cell.v > 40000 && cell.v < 50000) {
+          const d = XLSX.SSF.parse_date_code(cell.v)
+          navDate = `${d.y}-${String(d.m).padStart(2, '0')}-${String(d.d).padStart(2, '0')}`
+          break
+        }
+      }
+    }
+
+    if (hHeaderRow >= 0) {
+      // 持倉表格式：B=ISIN, L=最新淨值（第11欄，index 11）
+      for (let r = hHeaderRow + 1; r <= holdingRange.e.r; r++) {
+        const getHVal = (col: number) => {
+          const cell = holdingWs[XLSX.utils.encode_cell({ r, c: col })]
+          return cell ? cell.v : null
+        }
+
+        const isin = String(getHVal(1) || '').trim()
+        if (!isin || isin === '' || isin.includes('小計') || isin.includes('總計')) continue
+
+        const latestNav = getHVal(11)
+        if (!latestNav || typeof latestNav !== 'number' || latestNav <= 0) continue
+        if (String(latestNav).includes('N/A')) continue
+
+        const fundId = isinToId.get(isin)
+        if (!fundId) continue
+
+        // 寫入最新淨值
+        const fund = uniqueFunds.get(isin) || parsedTxs.find(t => t.isin === isin)
+        await supabase.from('fund_prices').upsert({
+          fund_id: fundId,
+          price_date: navDate,
+          nav: latestNav,
+          currency: fund?.currency || 'USD',
+          source: 'excel_holding',
+        }, { onConflict: 'fund_id,price_date' })
+      }
+    }
+  }
+
   return { fundsCreated, fundsExisted, transactionsCreated, errors }
 }
 
