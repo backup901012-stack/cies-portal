@@ -63,10 +63,20 @@ export async function GET() {
   const errors: string[] = []
 
   try {
-    // 取所有需要自動更新的基金
+    // 只更新有持倉的基金（透過 transactions 關聯）
+    const { data: activeFundIds } = await supabase
+      .from('transactions')
+      .select('fund_id')
+    const uniqueFundIds = [...new Set((activeFundIds || []).map(t => t.fund_id))]
+
+    if (!uniqueFundIds.length) {
+      return NextResponse.json({ success: true, message: '無持倉基金', updated: 0 })
+    }
+
     const { data: funds } = await supabase
       .from('funds')
       .select('id, isin, yahoo_ticker, nav_source, currency')
+      .in('id', uniqueFundIds)
       .in('nav_source', ['yahoo', 'frankfurt'])
 
     if (!funds?.length) {
