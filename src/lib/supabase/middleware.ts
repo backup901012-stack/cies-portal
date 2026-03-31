@@ -30,7 +30,7 @@ export async function updateSession(request: NextRequest) {
   } = await supabase.auth.getUser()
 
   // 未登入且不在公開頁面 → 導向登入
-  const publicPaths = ['/login', '/register', '/api/auth/callback']
+  const publicPaths = ['/login', '/register', '/api/auth/callback', '/api/cron/']
   const isPublicPath = publicPaths.some(path =>
     request.nextUrl.pathname.startsWith(path)
   )
