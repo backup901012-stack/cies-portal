@@ -63,14 +63,14 @@ export async function GET() {
   const errors: string[] = []
 
   try {
-    // 只更新有淨值記錄的基金（代表曾被交易過）
-    const { data: priceRecords } = await supabase
-      .from('fund_prices')
+    // 透過 view 查詢有持倉的基金（繞過 transactions RLS）
+    const { data: activeIds } = await supabase
+      .from('active_fund_ids')
       .select('fund_id')
-    const uniqueFundIds = [...new Set((priceRecords || []).map(r => r.fund_id))]
+    const uniqueFundIds = (activeIds || []).map(r => r.fund_id)
 
     if (!uniqueFundIds.length) {
-      return NextResponse.json({ success: true, message: '無需更新基金', updated: 0 })
+      return NextResponse.json({ success: true, message: '無持倉基金', updated: 0 })
     }
 
     const { data: funds } = await supabase
