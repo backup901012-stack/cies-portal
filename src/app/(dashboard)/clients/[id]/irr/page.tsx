@@ -68,17 +68,30 @@ export default function IrrPage() {
       const hkdRate = currency === 'HKD' ? 1 : (ratesMap.get(currency) || 7.82)
       const nav = navsMap.get(fundId) || txs[txs.length - 1]?.nav || 0
 
-      // 建立現金流
+      // 建立現金流（買入=負、賣出/派息=正）
       const cashflows: { date: Date; amount: number }[] = []
       let totalShares = 0
 
       for (const tx of txs) {
-        const hkd = tx.total_hkd || 0
-        cashflows.push({ date: new Date(tx.trade_date), amount: hkd })
-        allCashflows.push({ date: new Date(tx.trade_date), amount: hkd })
+        const absHkd = Math.abs(tx.total_hkd || 0)
+        let cfAmount = 0
 
-        if (tx.type === '買入') totalShares += (tx.shares || 0)
-        else if (tx.type === '賣出') totalShares -= Math.abs(tx.shares || 0)
+        if (tx.type === '買入') {
+          cfAmount = -absHkd  // 付出去的錢（負數）
+          totalShares += (tx.shares || 0)
+        } else if (tx.type === '賣出') {
+          cfAmount = absHkd   // 收回的錢（正數）
+          totalShares -= Math.abs(tx.shares || 0)
+        } else if (tx.type === '派息') {
+          cfAmount = absHkd   // 收到的股息（正數）
+        } else if (tx.type === '管理費') {
+          cfAmount = -absHkd  // 付出的費用（負數）
+        }
+
+        if (cfAmount !== 0) {
+          cashflows.push({ date: new Date(tx.trade_date), amount: cfAmount })
+          allCashflows.push({ date: new Date(tx.trade_date), amount: cfAmount })
+        }
       }
 
       // 加入期末估值

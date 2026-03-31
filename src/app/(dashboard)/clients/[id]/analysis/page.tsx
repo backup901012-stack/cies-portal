@@ -78,13 +78,16 @@ export default function AnalysisPage() {
     .map(([name, v]) => ({ name, value: v.value, investment: v.investment, pnl: v.value - v.investment }))
     .sort((a, b) => b.value - a.value)
 
-  // 風格配置數據
+  // 風格配置數據（使用 fund_type 或 style，排除策略名稱）
+  const strategyNames = new Set(['保守型', '平衡型', '進取型'])
   const styleMap = new Map<string, { value: number; investment: number }>()
   for (const g of portfolio.holdings_by_strategy) {
     for (const h of g.holdings) {
-      const style = h.fund.style || '其他'
-      const prev = styleMap.get(style) || { value: 0, investment: 0 }
-      styleMap.set(style, { value: prev.value + h.market_value_hkd, investment: prev.investment + h.investment_hkd })
+      // 優先用 fund_type，若 style 不是策略名稱也可以用
+      let styleName = h.fund.fund_type || h.fund.style || '其他'
+      if (strategyNames.has(styleName)) styleName = h.fund.fund_type || '其他'
+      const prev = styleMap.get(styleName) || { value: 0, investment: 0 }
+      styleMap.set(styleName, { value: prev.value + h.market_value_hkd, investment: prev.investment + h.investment_hkd })
     }
   }
   const styleData = [...styleMap.entries()]
@@ -95,9 +98,11 @@ export default function AnalysisPage() {
   const pnlData = portfolio.holdings_by_strategy
     .flatMap(g => g.holdings)
     .map(h => ({
-      name: (h.fund.name_zh || h.fund.isin || '').slice(0, 12),
+      name: h.fund.name_zh || h.fund.isin || '',
+      shortName: (h.fund.name_zh || h.fund.isin || '').slice(0, 8),
       rate: +(h.return_rate * 100).toFixed(2),
       strategy: h.fund.investment_style || '其他',
+      pnlHkd: h.total_return,
     }))
     .sort((a, b) => b.rate - a.rate)
 
@@ -109,8 +114,12 @@ export default function AnalysisPage() {
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const renderLabel = (props: any) => {
-    const { name, percent } = props
-    return `${name || ''} ${((percent || 0) * 100).toFixed(1)}%`
+    const { name, percent, x, cx } = props
+    const displayName = (name || '').length > 6 ? (name || '').slice(0, 6) + '…' : name
+    const pctStr = ((percent || 0) * 100).toFixed(1) + '%'
+    // 根據標籤在左邊還是右邊調整對齊
+    const isLeft = x < cx
+    return isLeft ? `${pctStr} ${displayName}` : `${displayName} ${pctStr}`
   }
 
   return (
@@ -204,13 +213,19 @@ export default function AnalysisPage() {
       {/* 盈虧率柱狀圖 */}
       <div className="bg-white rounded-xl shadow-sm p-5">
         <h3 className="font-bold text-gray-800 mb-3">各基金盈虧率比較</h3>
-        <ResponsiveContainer width="100%" height={Math.max(300, pnlData.length * 35)}>
-          <BarChart data={pnlData} layout="vertical" margin={{ left: 100, right: 30 }}>
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis type="number" tickFormatter={v => `${v}%`} />
-            <YAxis type="category" dataKey="name" width={100} tick={{ fontSize: 12 }} />
-            <Tooltip formatter={(value) => `${value}%`} />
-            <Bar dataKey="rate" name="盈虧率">
+        <ResponsiveContainer width="100%" height={Math.max(300, pnlData.length * 45)}>
+          <BarChart data={pnlData} layout="vertical" margin={{ left: 20, right: 60 }}>
+            <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+            <XAxis type="number" tickFormatter={v => `${v}%`} domain={['dataMin - 1', 'dataMax + 1']} />
+            <YAxis type="category" dataKey="shortName" width={140} tick={{ fontSize: 13 }} />
+            <Tooltip
+              formatter={(value) => [`${value}%`, '盈虧率']}
+              labelFormatter={(label) => {
+                const item = pnlData.find(d => d.shortName === label)
+                return item?.name || label
+              }}
+            />
+            <Bar dataKey="rate" name="盈虧率" radius={[0, 4, 4, 0]} barSize={24}>
               {pnlData.map((entry, i) => (
                 <Cell key={i} fill={entry.rate >= 0 ? '#10b981' : '#ef4444'} />
               ))}
