@@ -1,0 +1,12 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/update-fx",
+      "schedule": "0 1 * * *"
+    },
+    {
+      "path": "/api/cron/update-nav",
+      "schedule": "0 2 * * *"
+    }
+  ]
+}
