@@ -6,10 +6,14 @@ import { createClient } from '@/lib/supabase/client'
 import { calculatePortfolio } from '@/lib/holdings'
 import type { Fund, Transaction, PortfolioSummary } from '@/types/database'
 
+type DisplayCurrency = 'HKD' | 'USD'
+
 export default function ClientHoldingsPage() {
   const { id } = useParams<{ id: string }>()
   const [portfolio, setPortfolio] = useState<PortfolioSummary | null>(null)
   const [loading, setLoading] = useState(true)
+  const [currency, setCurrency] = useState<DisplayCurrency>('HKD')
+  const [usdHkdRate, setUsdHkdRate] = useState(7.82)
   const supabase = createClient()
 
   useEffect(() => {
@@ -17,7 +21,6 @@ export default function ClientHoldingsPage() {
   }, [id])
 
   async function loadPortfolio() {
-    // 載入交易記錄
     const { data: txData } = await supabase
       .from('transactions')
       .select('*, fund:funds(*)')
@@ -29,13 +32,11 @@ export default function ClientHoldingsPage() {
       return
     }
 
-    // 建立 funds map
     const fundsMap = new Map<string, Fund>()
     for (const tx of txData) {
       if (tx.fund) fundsMap.set(tx.fund.id, tx.fund)
     }
 
-    // 取最新淨值
     const fundIds = [...fundsMap.keys()]
     const navsMap = new Map<string, number>()
     for (const fid of fundIds) {
@@ -50,7 +51,6 @@ export default function ClientHoldingsPage() {
       }
     }
 
-    // 取匯率
     const ratesMap = new Map<string, number>()
     const { data: ratesData } = await supabase
       .from('exchange_rates')
@@ -67,17 +67,30 @@ export default function ClientHoldingsPage() {
       }
     }
 
+    // 儲存 USD/HKD 匯率
+    const usdRate = ratesMap.get('USD') || 7.82
+    setUsdHkdRate(usdRate)
+
     const result = calculatePortfolio(txData, fundsMap, navsMap, ratesMap)
     setPortfolio(result)
     setLoading(false)
   }
 
+  // 幣別轉換係數
+  const fx = currency === 'USD' ? (1 / usdHkdRate) : 1
+  const ccy = currency
+
   function fmtNum(n: number, decimals = 0): string {
-    return n.toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals })
+    return (n * fx).toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals })
   }
 
   function fmtPct(n: number): string {
     return (n * 100).toFixed(2) + '%'
+  }
+
+  // 平均成本和淨值不需要轉換（已經是原幣）
+  function fmtRaw(n: number, decimals = 4): string {
+    return n.toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals })
   }
 
   if (loading) {
@@ -95,17 +108,39 @@ export default function ClientHoldingsPage() {
 
   return (
     <div>
+      {/* 幣別切換 */}
+      <div className="flex justify-end mb-4">
+        <div className="inline-flex bg-gray-100 rounded-lg p-0.5">
+          <button
+            onClick={() => setCurrency('HKD')}
+            className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+              currency === 'HKD' ? 'bg-white shadow text-blue-600' : 'text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            HKD
+          </button>
+          <button
+            onClick={() => setCurrency('USD')}
+            className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+              currency === 'USD' ? 'bg-white shadow text-blue-600' : 'text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            USD
+          </button>
+        </div>
+      </div>
+
       {/* 總覽卡片 */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <div className="bg-white rounded-xl shadow-sm p-4">
           <p className="text-sm text-gray-500">投資總額</p>
           <p className="text-xl font-bold">{fmtNum(portfolio.total_investment)}</p>
-          <p className="text-xs text-gray-400">HKD</p>
+          <p className="text-xs text-gray-400">{ccy}</p>
         </div>
         <div className="bg-white rounded-xl shadow-sm p-4">
           <p className="text-sm text-gray-500">期末市值</p>
           <p className="text-xl font-bold">{fmtNum(portfolio.total_market_value)}</p>
-          <p className="text-xs text-gray-400">HKD</p>
+          <p className="text-xs text-gray-400">{ccy}</p>
         </div>
         <div className="bg-white rounded-xl shadow-sm p-4">
           <p className="text-sm text-gray-500">未實現損益</p>
@@ -133,16 +168,16 @@ export default function ClientHoldingsPage() {
             {group.strategy}
           </h2>
           <div className="bg-white rounded-xl shadow-sm overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full text-sm whitespace-nowrap">
               <thead className="bg-gray-50 text-gray-600">
                 <tr>
                   <th className="text-left px-3 py-2.5 font-medium">ISIN</th>
                   <th className="text-left px-3 py-2.5 font-medium">名稱</th>
                   <th className="text-right px-3 py-2.5 font-medium">平均成本</th>
                   <th className="text-right px-3 py-2.5 font-medium">持倉股數</th>
-                  <th className="text-right px-3 py-2.5 font-medium">投資額(HKD)</th>
+                  <th className="text-right px-3 py-2.5 font-medium">投資額({ccy})</th>
                   <th className="text-right px-3 py-2.5 font-medium">最新淨值</th>
-                  <th className="text-right px-3 py-2.5 font-medium">市值(HKD)</th>
+                  <th className="text-right px-3 py-2.5 font-medium">市值({ccy})</th>
                   <th className="text-right px-3 py-2.5 font-medium">未實現損益</th>
                   <th className="text-right px-3 py-2.5 font-medium">已實現損益</th>
                   <th className="text-right px-3 py-2.5 font-medium">累計派息</th>
@@ -156,10 +191,10 @@ export default function ClientHoldingsPage() {
                   <tr key={h.fund.id} className="hover:bg-gray-50">
                     <td className="px-3 py-2 font-mono text-xs">{h.fund.isin}</td>
                     <td className="px-3 py-2 text-xs">{h.fund.name_zh || h.fund.name_en || '-'}</td>
-                    <td className="px-3 py-2 text-right">{fmtNum(h.avg_cost, 4)}</td>
-                    <td className="px-3 py-2 text-right">{fmtNum(h.shares, 2)}</td>
+                    <td className="px-3 py-2 text-right">{fmtRaw(h.avg_cost)}</td>
+                    <td className="px-3 py-2 text-right">{fmtRaw(h.shares, 2)}</td>
                     <td className="px-3 py-2 text-right">{fmtNum(h.investment_hkd)}</td>
-                    <td className="px-3 py-2 text-right">{fmtNum(h.latest_nav, 4)}</td>
+                    <td className="px-3 py-2 text-right">{fmtRaw(h.latest_nav)}</td>
                     <td className="px-3 py-2 text-right">{fmtNum(h.market_value_hkd)}</td>
                     <td className={`px-3 py-2 text-right ${h.unrealized_pnl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                       {fmtNum(h.unrealized_pnl)}
@@ -210,16 +245,16 @@ export default function ClientHoldingsPage() {
       ))}
 
       {/* 整體總計 */}
-      <div className="bg-slate-800 text-white rounded-xl p-5 flex justify-between items-center">
+      <div className="bg-slate-800 text-white rounded-xl p-5 flex flex-wrap justify-between items-center gap-4">
         <span className="font-bold">整體總計</span>
-        <div className="flex gap-8 text-sm">
+        <div className="flex flex-wrap gap-6 text-sm">
           <div>
             <span className="text-slate-400">投資額</span>
-            <span className="ml-2 font-bold">{fmtNum(portfolio.total_investment)} HKD</span>
+            <span className="ml-2 font-bold">{fmtNum(portfolio.total_investment)} {ccy}</span>
           </div>
           <div>
             <span className="text-slate-400">市值</span>
-            <span className="ml-2 font-bold">{fmtNum(portfolio.total_market_value)} HKD</span>
+            <span className="ml-2 font-bold">{fmtNum(portfolio.total_market_value)} {ccy}</span>
           </div>
           <div>
             <span className="text-slate-400">損益</span>
