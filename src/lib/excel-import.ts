@@ -20,6 +20,52 @@ interface ParsedTransaction {
   notes: string | null
 }
 
+// 從 Excel 提取客戶資訊（客戶編號 + 姓名）
+export function parseClientInfo(fileBuffer: ArrayBuffer): { client_code: string; name: string } | null {
+  const workbook = XLSX.read(fileBuffer, { type: 'array', cellDates: true })
+
+  // 找「現金流」工作表
+  const sheetName = workbook.SheetNames.find(name => name.includes('現金流'))
+  if (!sheetName) return null
+
+  const ws = workbook.Sheets[sheetName]
+
+  // 掃描前 10 行，找「P00xxxx 姓名」格式的儲存格
+  // Excel 格式：第3行B欄 = "P005812NC 俞悅 — CIES 投資組合現金流追蹤"
+  for (let r = 0; r <= 10; r++) {
+    for (let c = 0; c <= 5; c++) {
+      const cell = ws[XLSX.utils.encode_cell({ r, c })]
+      if (!cell) continue
+      const val = String(cell.v).trim()
+
+      // 匹配 "P005812NC 俞悅" 或 "P005812NC 俞悅 — ..."
+      const match = val.match(/^(P\d{6}\w{0,4})\s+(.+?)(?:\s+[—\-–]|$)/)
+      if (match) {
+        return { client_code: match[1], name: match[2].trim() }
+      }
+    }
+  }
+
+  // 備用：找持倉配置表
+  const holdingSheet = workbook.SheetNames.find(name => name.includes('持倉'))
+  if (holdingSheet) {
+    const ws2 = workbook.Sheets[holdingSheet]
+    for (let r = 0; r <= 10; r++) {
+      for (let c = 0; c <= 5; c++) {
+        const cell = ws2[XLSX.utils.encode_cell({ r, c })]
+        if (!cell) continue
+        const val = String(cell.v).trim()
+        const match = val.match(/^(P\d{6}\w{0,4})\s+(.+?)(?:\s+[—\-–]|$)/)
+        if (match) {
+          return { client_code: match[1], name: match[2].trim() }
+        }
+      }
+    }
+  }
+
+  return null
+}
+
 // 科目中文映射
 const typeMap: Record<string, '買入' | '賣出' | '派息' | '管理費'> = {
   '買入': '買入',
