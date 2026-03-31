@@ -1,9 +1,11 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { importExcelToDatabase, generateTemplate } from '@/lib/excel-import'
 import type { Transaction, Fund } from '@/types/database'
+import * as XLSX from 'xlsx'
 
 export default function TransactionsPage() {
   const { id } = useParams<{ id: string }>()
@@ -11,6 +13,9 @@ export default function TransactionsPage() {
   const [funds, setFunds] = useState<Fund[]>([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
+  const [importing, setImporting] = useState(false)
+  const [importResult, setImportResult] = useState<{ success: boolean; message: string } | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const [form, setForm] = useState({
     fund_isin: '',
     trade_date: new Date().toISOString().split('T')[0],
@@ -146,17 +151,103 @@ export default function TransactionsPage() {
     return n.toLocaleString('en-US', { maximumFractionDigits: 2 })
   }
 
+  // Excel 匯入處理
+  async function handleExcelImport(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    setImporting(true)
+    setImportResult(null)
+
+    try {
+      const buffer = await file.arrayBuffer()
+      const result = await importExcelToDatabase(buffer, id, supabase)
+
+      if (result.errors.length > 0) {
+        setImportResult({
+          success: result.transactionsCreated > 0,
+          message: `匯入 ${result.transactionsCreated} 筆交易，${result.fundsCreated} 檔新基金（${result.fundsExisted} 檔已存在）。\n錯誤：${result.errors.join('；')}`,
+        })
+      } else {
+        setImportResult({
+          success: true,
+          message: `成功匯入 ${result.transactionsCreated} 筆交易，${result.fundsCreated} 檔新基金（${result.fundsExisted} 檔已存在）`,
+        })
+      }
+
+      loadData()
+    } catch (err) {
+      setImportResult({
+        success: false,
+        message: `匯入失敗：${err instanceof Error ? err.message : '未知錯誤'}`,
+      })
+    }
+
+    setImporting(false)
+    // 清空 file input
+    if (fileInputRef.current) fileInputRef.current.value = ''
+  }
+
+  // 下載標準模板
+  function handleDownloadTemplate() {
+    const buffer = generateTemplate()
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'CIES_交易匯入模板.xlsx'
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-lg font-bold text-gray-800">交易記錄</h2>
-        <button
-          onClick={() => setShowForm(!showForm)}
-          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium"
-        >
-          {showForm ? '取消' : '+ 新增交易'}
-        </button>
+        <div className="flex items-center gap-2">
+          {/* 下載模板 */}
+          <button
+            onClick={handleDownloadTemplate}
+            className="px-3 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 text-sm font-medium"
+          >
+            下載模板
+          </button>
+          {/* Excel 匯入 */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".xlsx,.xls"
+            onChange={handleExcelImport}
+            className="hidden"
+          />
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={importing}
+            className="px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 text-sm font-medium"
+          >
+            {importing ? '匯入中...' : 'Excel 匯入'}
+          </button>
+          {/* 手動新增 */}
+          <button
+            onClick={() => setShowForm(!showForm)}
+            className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium"
+          >
+            {showForm ? '取消' : '+ 手動新增'}
+          </button>
+        </div>
       </div>
+
+      {/* 匯入結果提示 */}
+      {importResult && (
+        <div className={`mb-4 p-3 rounded-lg text-sm ${
+          importResult.success ? 'bg-green-50 text-green-800 border border-green-200' : 'bg-red-50 text-red-800 border border-red-200'
+        }`}>
+          <div className="flex justify-between items-start">
+            <p className="whitespace-pre-line">{importResult.message}</p>
+            <button onClick={() => setImportResult(null)} className="text-gray-400 hover:text-gray-600 ml-2">x</button>
+          </div>
+        </div>
+      )}
 
       {/* 新增交易表單 */}
       {showForm && (
