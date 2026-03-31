@@ -192,12 +192,42 @@ export function calculatePortfolio(
     })
   }
 
+  // 計算整體 IRR
+  const allCashflows: { date: Date; amount: number }[] = []
+  const holdingSharesByFund = new Map<string, number>()
+
+  for (const t of transactions) {
+    const absHkd = Math.abs(t.total_hkd || 0)
+    let cfAmount = 0
+    if (t.type === '買入') {
+      cfAmount = -absHkd
+      holdingSharesByFund.set(t.fund_id, (holdingSharesByFund.get(t.fund_id) || 0) + (t.shares || 0))
+    } else if (t.type === '賣出') {
+      cfAmount = absHkd
+      holdingSharesByFund.set(t.fund_id, (holdingSharesByFund.get(t.fund_id) || 0) - Math.abs(t.shares || 0))
+    } else if (t.type === '派息') {
+      cfAmount = absHkd
+    } else if (t.type === '管理費') {
+      cfAmount = -absHkd
+    }
+    if (cfAmount !== 0) {
+      allCashflows.push({ date: new Date(t.trade_date), amount: cfAmount })
+    }
+  }
+
+  // 加入期末估值（今天的市值）
+  if (totalMarketValue > 0) {
+    allCashflows.push({ date: new Date(), amount: totalMarketValue })
+  }
+
+  const irr = calculateXIRR(allCashflows)
+
   return {
     total_investment: totalInvestment,
     total_market_value: totalMarketValue,
     total_pnl: totalMarketValue - totalInvestment,
     total_return_rate: totalInvestment > 0 ? (totalMarketValue - totalInvestment) / totalInvestment : 0,
-    irr: 0, // 另外計算
+    irr,
     holdings_by_strategy: holdingsByStrategy,
   }
 }
