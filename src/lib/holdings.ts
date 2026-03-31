@@ -50,6 +50,7 @@ function calculateHolding(
 ): Holding | null {
   let totalShares = 0
   let totalCostHkd = 0
+  let totalCostOriginal = 0  // 原幣成本（用於計算原幣平均成本）
   let realizedPnl = 0
   let totalDividends = 0
 
@@ -57,11 +58,14 @@ function calculateHolding(
     if (t.type === '買入') {
       totalShares += t.shares || 0
       totalCostHkd += Math.abs(t.total_hkd || 0)
+      totalCostOriginal += Math.abs(t.total_amount || 0)
     } else if (t.type === '賣出') {
       const soldShares = Math.abs(t.shares || 0)
-      const avgCost = totalShares > 0 ? totalCostHkd / totalShares : 0
-      realizedPnl += (t.total_hkd || 0) - avgCost * soldShares
-      totalCostHkd -= avgCost * soldShares
+      const avgCostHkd = totalShares > 0 ? totalCostHkd / totalShares : 0
+      const avgCostOrig = totalShares > 0 ? totalCostOriginal / totalShares : 0
+      realizedPnl += Math.abs(t.total_hkd || 0) - avgCostHkd * soldShares
+      totalCostHkd -= avgCostHkd * soldShares
+      totalCostOriginal -= avgCostOrig * soldShares
       totalShares -= soldShares
     } else if (t.type === '派息') {
       totalDividends += Math.abs(t.total_hkd || t.dividend_amount || 0)
@@ -70,7 +74,8 @@ function calculateHolding(
 
   if (totalShares <= 0) return null
 
-  const avgCost = totalShares > 0 ? totalCostHkd / totalShares : 0
+  // 平均成本用原幣計算（跟 NAV 同單位，方便比較）
+  const avgCost = totalShares > 0 ? totalCostOriginal / totalShares : 0
   const marketValueHkd = latestNav * totalShares * hkdRate
   const unrealizedPnl = marketValueHkd - totalCostHkd
   const totalReturn = unrealizedPnl + realizedPnl + totalDividends
